@@ -50,17 +50,30 @@ void readPPM(const char* filename) {
         exit(1);
     }
 
-    while (fgetc(fp) != '\n');
+    while(fgetc(fp) != '\n');
 
-    img->blocks = malloc((img->sizeX * img->sizeY)/BLOCK_AREA * sizeof(Block));
+    const size_t blockNumber = (img->sizeX * img->sizeY)/BLOCK_AREA;
+    img->blocks = malloc(blockNumber * sizeof(Block));
 
     Pixel* pixels = malloc(img->sizeX * img->sizeY * sizeof(Pixel));
-    
+
     //read pixel data from file
-    if (fread(pixels, 3 * img->sizeX, img->sizeY, fp) != img->sizeY) {
+    if(fread(pixels, 3 * img->sizeX, img->sizeY, fp) != img->sizeY) {
         fprintf(stderr, "Error loading image '%s'\n", filename);
         exit(1);
     }
+
+
+    const size_t rowBlockNumber = img->sizeX*BLOCK_SIZE / BLOCK_AREA;
+    Pixel* currentBlockFirstPixelPtr = pixels;
+    for(size_t i = 0; i < blockNumber; i++) {
+        Pixel* blockStartPtr[BLOCK_SIZE];
+
+        // if(){
+
+        // }
+    }
+    
 
     fclose(fp);
 }

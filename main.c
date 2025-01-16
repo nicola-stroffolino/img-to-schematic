@@ -1,13 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #define BLOCK_SIZE 16
-#define BLOCK_AREA BLOCK_SIZE*BLOCK_SIZE
+#define BLOCK_AREA BLOCK_SIZE * BLOCK_SIZE
 
 typedef struct {
-    __uint8_t r;
-    __uint8_t g;
-    __uint8_t b;
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
 } Pixel;
 
 typedef struct {
@@ -27,7 +28,7 @@ void readPPM(const char* filename) {
     }
 
     //read image format
-    char buff[16];
+    char buff[3];
     if(!fgets(buff, sizeof(buff), fp)) {
         perror(filename);
         exit(1);
@@ -50,29 +51,76 @@ void readPPM(const char* filename) {
         exit(1);
     }
 
+    // skip the '255' in third line
+    fgetc(fp);
     while(fgetc(fp) != '\n');
 
-    const size_t blockNumber = (img->sizeX * img->sizeY)/BLOCK_AREA;
-    img->blocks = malloc(blockNumber * sizeof(Block));
+    const size_t pixels_Per_Image = img->sizeX * img->sizeY;
+    const size_t blocks_Per_Image = (pixels_Per_Image) / BLOCK_AREA;
+    img->blocks = malloc(blocks_Per_Image * sizeof(Block));
 
-    Pixel* pixels = malloc(img->sizeX * img->sizeY * sizeof(Pixel));
+    const size_t blocks_Per_Line = img->sizeX / BLOCK_SIZE;
 
-    //read pixel data from file
-    if(fread(pixels, 3 * img->sizeX, img->sizeY, fp) != img->sizeY) {
-        fprintf(stderr, "Error loading image '%s'\n", filename);
-        exit(1);
+    Pixel *dump = malloc(pixels_Per_Image * sizeof(Pixel));
+    for (size_t i = 0; i < pixels_Per_Image; i++) {
+        Pixel pixel;
+        fscanf(fp, "%d %d %d", &pixel.r, &pixel.g, &pixel.b);
+        dump[i] = pixel;
     }
 
+    const uint8_t current_Block = 0;
+    for (size_t current_Block = 0, current_Row = 0; current_Block < blocks_Per_Image; current_Block++) {
+        Block *block = &(img->blocks[current_Block]);
+        
+        if (current_Block % blocks_Per_Line == 0 && current_Block != 0) current_Row++;
+        // printf("%d\n", current_Row);
 
-    const size_t rowBlockNumber = img->sizeX*BLOCK_SIZE / BLOCK_AREA;
-    Pixel* currentBlockFirstPixelPtr = pixels;
-    for(size_t i = 0; i < blockNumber; i++) {
-        Pixel* blockStartPtr[BLOCK_SIZE];
-
-        // if(){
-
-        // }
+        for (size_t i = 0; i < BLOCK_SIZE; i++) {
+            for (size_t j = 0; j < BLOCK_SIZE; j++) {
+                Pixel pixel = dump[(current_Block % blocks_Per_Line) * BLOCK_SIZE + i + img->sizeX * j + current_Row * img->sizeX * BLOCK_SIZE];
+                
+                block->pixels[j][i] = pixel;
+                // printf("\e[48;2;%d;%d;%dm ", pixel.r, pixel.g, pixel.b);
+            }
+            // printf("\n");
+        }
+        // getchar();
     }
+    
+
+    // for (int j = 0; j < img->sizeY; j++) {
+    //     for (int i = 0; i < img->sizeX; i++) {
+    //         int rgb[3];
+    //         fscanf(fp, "%d %d %d", &rgb[0], &rgb[1], &rgb[2]);
+    //         printf("\e[48;2;%d;%d;%dm ", rgb[0], rgb[1], rgb[2]);
+    //     }
+    //     printf("\n");
+    // }
+
+
+
+
+
+
+
+    // Pixel* pixels = malloc(img->sizeX * img->sizeY * sizeof(Pixel));
+
+    // //read pixel data from file
+    // if(fread(pixels, 3 * img->sizeX, img->sizeY, fp) != img->sizeY) {
+    //     fprintf(stderr, "Error loading image '%s'\n", filename);
+    //     exit(1);
+    // }
+
+
+    // const size_t rowBlockNumber = img->sizeX*BLOCK_SIZE / BLOCK_AREA;
+    // Pixel* currentBlockFirstPixelPtr = pixels;
+    // for(size_t i = 0; i < blocksPerImage; i++) {
+    //     Pixel* blockStartPtr[BLOCK_SIZE];
+
+    //     // if(){
+
+    //     // }
+    // }
     
 
     fclose(fp);

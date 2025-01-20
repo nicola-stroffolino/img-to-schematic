@@ -16,6 +16,8 @@
 
 #define BLOCK_SIZE 16
 #define BLOCK_AREA (BLOCK_SIZE * BLOCK_SIZE)
+#define MAX_UNIQUE_BLOCKS 2048
+
 
 typedef struct {
     uint8_t r;
@@ -30,8 +32,15 @@ typedef struct {
 typedef struct {
     uint32_t sizeX, sizeY;
     size_t blocksNumber;
+    size_t blocksPerLine;
     Block* blocks;
 } PPMImage;
+
+typedef struct {
+    char *blockName;
+    uint8_t idxInArray;
+} BitmapElement;
+
 
 PPMImage *readPPM(const char *filename);
 void printBlock(Block *block);
@@ -96,7 +105,7 @@ size_t getBitmaps(Bitmap** blank_Bitmap, const char* dir) {
         return;
     }
 
-    Bitmap buffer[2048];
+    Bitmap buffer[MAX_UNIQUE_BLOCKS];
     size_t i = 0;
     while ((entry = readdir(dp)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
@@ -114,13 +123,10 @@ size_t getBitmaps(Bitmap** blank_Bitmap, const char* dir) {
             if (name != NULL) *name = 0;
 
             FILE* fp = fopen(filePath, "rb");
-            // Bitmap* b = malloc(sizeof(Bitmap));
 
             fread(&(buffer[i].block), sizeof(Block), 1, fp);
             buffer[i].blockName = malloc((strlen(entry->d_name) + 1) * sizeof(char));
             strcpy(buffer[i].blockName, entry->d_name);
-            // printBlock(&(buffer[i].block));
-            // printf("%s\n", buffer[i].blockName);
 
             fclose(fp);
             i++;
@@ -176,6 +182,7 @@ PPMImage* readPPM(const char* filename) {
 
     img->blocks = malloc(blocks_Per_Image * sizeof(Block));
     img->blocksNumber = blocks_Per_Image;
+    img->blocksPerLine = blocks_Per_Line;
 
     Pixel *dump = malloc(pixels_Per_Image * sizeof(Pixel));
     // DO NOT CHANGE SIZE_T IF ON LINUX, PLEASE
@@ -225,21 +232,37 @@ void printBlock(Block* block) {
     }
 }
 
-int blockCmp(Block* block, Bitmap* bitmaps, size_t n, char** out) {
+int blockCmp(Block* block, Bitmap* bitmaps, size_t n, BitmapElement* el, uint8_t tolerance) {
     for (size_t i = 0; i < n; i++) {
+        uint8_t isBlockValid = 1;
         for (size_t y = 0; y < BLOCK_SIZE; y++) {
             for (size_t x = 0; x < BLOCK_SIZE; x++) {
-                
+                if (
+                    abs((int)(block->pixels[y][x].r) - (int)(bitmaps[i].block.pixels[y][x].r)) > tolerance ||
+                    abs((int)(block->pixels[y][x].g) - (int)(bitmaps[i].block.pixels[y][x].g)) > tolerance ||
+                    abs((int)(block->pixels[y][x].b) - (int)(bitmaps[i].block.pixels[y][x].b)) > tolerance
+                ) {
+                    isBlockValid = 0;
+                    goto exit_cmp_for;
+                }
             }
         }
+
+exit_cmp_for:
+        if (isBlockValid) {
+            el->blockName = bitmaps[i].blockName;
+            el->idxInArray = i;
+            return 0;
+        }
         
-        // 🫡 you will always be remembered!
+        // 🫡 you will always be remembered memcmp!
         // int res = memcmp(&(bitmaps[i].block), block, sizeof(Block));
         // if (res == 0) {
         //     *out = bitmaps[i].blockName;
         //     return 0;
         // }
     }
+
     return -1;
 }
 
@@ -248,22 +271,36 @@ int main() {
 
     Bitmap *bitmaps;
     size_t n = getBitmaps(&bitmaps, "./bitmaps");
-
-    // for (size_t i = 0; i < n; i++) {
-    //     printBlock(&(bitmaps[i].block));
-    //     printf("%s\n", bitmaps[i].blockName);
-    // }
-
-    PPMImage *img = readPPM("./source/atlas_new.ppm");
+    PPMImage *img = readPPM("./source/prova2.ppm");
+    BitmapElement palette[MAX_UNIQUE_BLOCKS];
+    uint16_t paletteLength = 0;
 
     for (size_t b = 0; b < img->blocksNumber; b++) {
-        char **blockName;
-        int ret = blockCmp(&img->blocks[b], bitmaps, n, blockName);
-        printf("%d %s", ret, *blockName);
-        printBlock(&img->blocks[b]);
-        getchar();
+        BitmapElement el;
+        int ret = blockCmp(&img->blocks[b], bitmaps, n, &el, 5);
+        if (ret == EOF) {
+            fprintf(stderr, "Block not Recognized (Something has gone very wrong!)");
+            exit(1);
+        }
+
+        uint8_t blockAlreadyPresent = 0;
+        for (size_t e = 0; e < paletteLength; e++) {
+            if (el.idxInArray == palette[e].idxInArray) {
+                blockAlreadyPresent = 1;
+                break;
+            }
+        }
+        
+        if(!blockAlreadyPresent) palette[paletteLength++] = el;
+
+        // printf("%d %s", ret, el.blockName);
+        // printBlock(&img->blocks[b]);
+        // getchar();
     }
-    
+
+    for (size_t e = 0; e < paletteLength; e++) {
+        printf("%s ", palette[e].blockName);
+    }
 
     return 0;
 }

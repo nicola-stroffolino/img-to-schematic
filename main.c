@@ -252,6 +252,7 @@ exit_cmp_for:
         if (isBlockValid) {
             el->blockName = bitmaps[i].blockName;
             el->idxInArray = i;
+            // printf("DIO SPORCO %d %s\n", i, bitmaps[i].blockName);
             return 0;
         }
         
@@ -263,7 +264,115 @@ exit_cmp_for:
         // }
     }
 
+    // printBlock(block);
+
     return -1;
+}
+
+static void print_nbt_tree(nbt_tag_t* tag, int indentation) {
+  for (int i = 0; i < indentation; i++) {
+    printf(" ");
+  }
+
+  if (tag->name) {
+    printf("%s: ", tag->name);
+  }
+
+  switch (tag->type) {
+    case NBT_TYPE_END: {
+      printf("[end]");
+      break;
+    }
+    case NBT_TYPE_BYTE: {
+      printf("%hhd", tag->tag_byte.value);
+      break;
+    }
+    case NBT_TYPE_SHORT: {
+      printf("%hd", tag->tag_short.value);
+      break;
+    }
+    case NBT_TYPE_INT: {
+      printf("%d", tag->tag_int.value);
+      break;
+    }
+    case NBT_TYPE_LONG: {
+      printf("%ld", tag->tag_long.value);
+      break;
+    }
+    case NBT_TYPE_FLOAT: {
+      printf("%f", tag->tag_float.value);
+      break;
+    }
+    case NBT_TYPE_DOUBLE: {
+      printf("%f", tag->tag_double.value);
+      break;
+    }
+    case NBT_TYPE_BYTE_ARRAY: {
+      printf("[byte array]");
+      break;
+      for (size_t i = 0; i < tag->tag_byte_array.size; i++) {
+        printf("%hhd ", tag->tag_byte_array.value[i]);
+      }
+      break;
+    }
+    case NBT_TYPE_STRING: {
+      printf("%s", tag->tag_string.value);
+      break;
+    }
+    case NBT_TYPE_LIST: {
+      printf("\n");
+      for (size_t i = 0; i < tag->tag_list.size; i++) {
+        print_nbt_tree(tag->tag_list.value[i], indentation + tag->name_size + 2);
+      }
+      break;
+    }
+    case NBT_TYPE_COMPOUND: {
+      printf("\n");
+      for (size_t i = 0; i < tag->tag_compound.size; i++) {
+        print_nbt_tree(tag->tag_compound.value[i], indentation + tag->name_size + 2);
+      }
+      break;
+    }
+    case NBT_TYPE_INT_ARRAY: {
+      printf("[int array]");
+      break;
+      for (size_t i = 0; i < tag->tag_int_array.size; i++) {
+        printf("%d ", tag->tag_int_array.value[i]);
+      }
+      break;
+    }
+    case NBT_TYPE_LONG_ARRAY: {
+      printf("[long array]");
+      break;
+      for (size_t i = 0; i < tag->tag_long_array.size; i++) {
+        printf("%ld ", tag->tag_long_array.value[i]);
+      }
+      break;
+    }
+    default: {
+      printf("[error]");
+    }
+  }
+
+  printf("\n");
+}
+
+static size_t writer_write(void* userdata, uint8_t* data, size_t size) {
+  return fwrite(data, 1, size, userdata);
+}
+
+void write_nbt_file(const char* name, nbt_tag_t* tag, int flags) {
+
+  FILE* file = fopen(name, "wb");
+
+  nbt_writer_t writer;
+
+  writer.write = writer_write;
+  writer.userdata = file;
+
+  nbt_write(writer, tag, flags);
+
+  fclose(file);
 }
 
 int main() {
@@ -271,11 +380,20 @@ int main() {
 
     Bitmap *bitmaps;
     size_t n = getBitmaps(&bitmaps, "./bitmaps");
-    PPMImage *img = readPPM("./source/prova2.ppm");
+    PPMImage *img = readPPM("./source/SpritecraftOutput.ppm");
     BitmapElement palette[MAX_UNIQUE_BLOCKS];
     uint16_t paletteLength = 0;
 
-    for (size_t b = 0; b < img->blocksNumber; b++) {
+    nbt_tag_t *root = nbt_new_tag_compound();
+
+    nbt_tag_t *paletteTag = nbt_new_tag_list(NBT_TYPE_COMPOUND);
+    nbt_set_tag_name(paletteTag, "palette", strlen("palette"));
+
+    nbt_tag_t *blocksTag = nbt_new_tag_list(NBT_TYPE_COMPOUND);
+    nbt_set_tag_name(blocksTag, "blocks", strlen("blocks"));
+
+    uint8_t y = 0xFF; // wrapping to 0 when ++ is called
+    for (int b = img->blocksNumber - 1, i = 0; b >= 0; b--, i++) {
         BitmapElement el;
         int ret = blockCmp(&img->blocks[b], bitmaps, n, &el, 5);
         if (ret == EOF) {
@@ -284,8 +402,9 @@ int main() {
         }
 
         uint8_t blockAlreadyPresent = 0;
-        for (size_t e = 0; e < paletteLength; e++) {
-            if (el.idxInArray == palette[e].idxInArray) {
+        size_t paletteIdx = 0;
+        for (; paletteIdx < paletteLength; paletteIdx++) {
+            if (el.idxInArray == palette[paletteIdx].idxInArray) {
                 blockAlreadyPresent = 1;
                 break;
             }
@@ -293,14 +412,61 @@ int main() {
         
         if(!blockAlreadyPresent) palette[paletteLength++] = el;
 
-        // printf("%d %s", ret, el.blockName);
+        uint8_t x = i % img->blocksPerLine;
+        if (x == 0) y++;
+
+        nbt_tag_t *blocksTagElement = nbt_new_tag_compound();
+        nbt_set_tag_name(blocksTagElement, "", 1);
+
+        nbt_tag_t *posTag = nbt_new_tag_list(NBT_TYPE_INT);
+        nbt_tag_list_append(posTag, nbt_new_tag_int(x));
+        nbt_tag_list_append(posTag, nbt_new_tag_int(y));
+        nbt_tag_list_append(posTag, nbt_new_tag_int(0));
+        nbt_set_tag_name(posTag, "pos", strlen("pos"));
+
+        nbt_tag_t *stateTag = nbt_new_tag_int(paletteIdx);
+        nbt_set_tag_name(stateTag, "state", strlen("state"));
+
+        nbt_tag_compound_append(blocksTagElement, posTag);
+        nbt_tag_compound_append(blocksTagElement, stateTag);
+        nbt_tag_list_append(blocksTag, blocksTagElement);
+
+        // printf("%s (%d, %d, 0)\n", el.blockName, x, y);
         // printBlock(&img->blocks[b]);
         // getchar();
     }
 
     for (size_t e = 0; e < paletteLength; e++) {
-        printf("%s ", palette[e].blockName);
+        nbt_tag_t *el = nbt_new_tag_compound();
+        nbt_set_tag_name(el, "", 1);
+
+        char buf[256] = "minecraft:";
+        strcat(buf, palette[e].blockName);
+        nbt_tag_t *name = nbt_new_tag_string(buf, strlen(buf));
+        nbt_set_tag_name(name, "Name", strlen("Name"));
+
+        nbt_tag_compound_append(el, name);
+        nbt_tag_list_append(paletteTag, el);
+
+        // printf("%s ", palette[e].blockName);
     }
+
+    nbt_tag_t *sizeTag = nbt_new_tag_list(NBT_TYPE_INT);
+    nbt_tag_list_append(sizeTag, nbt_new_tag_int(img->blocksPerLine));
+    nbt_tag_list_append(sizeTag, nbt_new_tag_int(img->sizeY / BLOCK_SIZE));
+    nbt_tag_list_append(sizeTag, nbt_new_tag_int(1));
+    nbt_set_tag_name(sizeTag, "size", strlen("size"));
+
+    nbt_tag_t *dataVersion = nbt_new_tag_int(3953);
+    nbt_set_tag_name(dataVersion, "DataVersion", strlen("DataVersion"));
+
+    nbt_tag_compound_append(root, blocksTag);
+    nbt_tag_compound_append(root, paletteTag);
+    nbt_tag_compound_append(root, sizeTag);
+    nbt_tag_compound_append(root, dataVersion);
+    print_nbt_tree(root, 4);
+
+    write_nbt_file("hiura.nbt", root, NBT_WRITE_FLAG_USE_GZIP);
 
     return 0;
 }

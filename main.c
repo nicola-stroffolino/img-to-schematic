@@ -17,7 +17,7 @@
 #define BLOCK_SIZE 16
 #define BLOCK_AREA (BLOCK_SIZE * BLOCK_SIZE)
 #define MAX_UNIQUE_BLOCKS 2048
-
+#define ARR_SIZE(arr) sizeof(arr) / sizeof(arr[0])
 
 typedef struct {
     uint8_t r;
@@ -38,7 +38,7 @@ typedef struct {
 
 typedef struct {
     char *blockName;
-    uint8_t idxInArray;
+    size_t idxInArray;
 } BitmapElement;
 
 
@@ -148,14 +148,14 @@ PPMImage* readPPM(const char* filename) {
         exit(1);
     }
 
-    //read image format
+    // Read image format
     char buff[3];
     if(!fgets(buff, sizeof(buff), fp)) {
         perror(filename);
         exit(1);
     }
 
-    //check the image format
+    // Check the image format in first line
     if(buff[0] != 'P' || buff[1] != '3') {
         fprintf(stderr, "Invalid image format (must be 'P3')\n");
         exit(1);
@@ -167,12 +167,13 @@ PPMImage* readPPM(const char* filename) {
         exit(1);
     }
 
+    // Check img size in second line
     if(fscanf(fp, "%d %d", &(img->sizeX), &(img->sizeY)) != 2) {
         fprintf(stderr, "Invalid image size (error loading '%s')\n", filename);
         exit(1);
     }
 
-    // skip the '255' in third line
+    // Skip the '255' in third line
     fgetc(fp);
     while(fgetc(fp) != '\n');
 
@@ -193,14 +194,12 @@ PPMImage* readPPM(const char* filename) {
         dump[p] = pixel;
     }
 
-    // printf("blocks_Per_Image: %d, blocks_Per_Line: %d, pixels_Per_Image: %d\n", blocks_Per_Image, blocks_Per_Line, pixels_Per_Image);
     const uint8_t current_Block = 0;
     for (size_t current_Block = 0, current_Row = 0; current_Block < blocks_Per_Image; current_Block++) {
         Block *block = &(img->blocks[current_Block]);
         
         if (current_Block % blocks_Per_Line == 0 && current_Block != 0) current_Row++;
 
-        // printf("current_Row: %d, current_Block: %d, sizeX: %d\n", current_Row, current_Block, img->sizeX);
         for (size_t i = 0; i < BLOCK_SIZE; i++) {
             for (size_t j = 0; j < BLOCK_SIZE; j++) {
                 Pixel pixel = dump[((current_Block % blocks_Per_Line) * BLOCK_SIZE) + i + (img->sizeX * j) + (current_Row * img->sizeX * BLOCK_SIZE)];
@@ -208,14 +207,7 @@ PPMImage* readPPM(const char* filename) {
                 block->pixels[j][i] = pixel;
                 
             }
-            // printf("\n");
         }
-
-        // printBlock(block);
-        
-        #ifdef HAS_BITMAP
-        
-        #endif
     }
     
     fclose(fp);
@@ -232,8 +224,9 @@ void printBlock(Block* block) {
     }
 }
 
+// Locate the block in the bitmap array of size n, with a give rbg tolerance, and store it in el
 int blockCmp(Block* block, Bitmap* bitmaps, size_t n, BitmapElement* el, uint8_t tolerance) {
-    for (size_t i = 0; i < n; i++) {
+	for (size_t i = 0; i < n; i++) {
         uint8_t isBlockValid = 1;
         for (size_t y = 0; y < BLOCK_SIZE; y++) {
             for (size_t x = 0; x < BLOCK_SIZE; x++) {
@@ -252,21 +245,28 @@ exit_cmp_for:
         if (isBlockValid) {
             el->blockName = bitmaps[i].blockName;
             el->idxInArray = i;
-            // printf("DIO SPORCO %d %s\n", i, bitmaps[i].blockName);
-            return 0;
+			return 0;
         }
-        
-        // 🫡 you will always be remembered memcmp!
-        // int res = memcmp(&(bitmaps[i].block), block, sizeof(Block));
-        // if (res == 0) {
-        //     *out = bitmaps[i].blockName;
-        //     return 0;
-        // }
     }
 
-    // printBlock(block);
+    printBlock(block);
 
-    return -1;
+    printf("You done messed tf up, spell the block name: ");
+    char buf[256];
+    scanf("%s", buf);
+
+	for (size_t i = 0; i < n; i++) {
+		if (strcmp(bitmaps[i].blockName, buf) == 0) {
+			// Replace the existing bitmap with the new one
+            memcpy(&bitmaps[i].block, block, sizeof(Block));
+
+            el->blockName = bitmaps[i].blockName;
+            el->idxInArray = i;
+			return 0;
+		}
+    }
+
+	return -1;
 }
 
 static void print_nbt_tree(nbt_tag_t* tag, int indentation) {
@@ -375,12 +375,15 @@ void write_nbt_file(const char* name, nbt_tag_t* tag, int flags) {
   fclose(file);
 }
 
-int main() {
+int main(int argc, char** argv) {
     // generateBitmap("./ppm", "./bitmaps");
+    char source[256] = "./source/";
+    strcat(source, argv[1]);
+    strcat(source, ".ppm");
 
     Bitmap *bitmaps;
     size_t n = getBitmaps(&bitmaps, "./bitmaps");
-    PPMImage *img = readPPM("./source/SpritecraftOutput.ppm");
+    PPMImage *img = readPPM(source);
     BitmapElement palette[MAX_UNIQUE_BLOCKS];
     uint16_t paletteLength = 0;
 
@@ -394,12 +397,13 @@ int main() {
 
     uint8_t y = 0xFF; // wrapping to 0 when ++ is called
     for (int b = img->blocksNumber - 1, i = 0; b >= 0; b--, i++) {
-        BitmapElement el;
-        int ret = blockCmp(&img->blocks[b], bitmaps, n, &el, 5);
-        if (ret == EOF) {
-            fprintf(stderr, "Block not Recognized (Something has gone very wrong!)");
-            exit(1);
-        }
+        BitmapElement el = { 0, 0 };
+        int ret = 0;
+        do {
+            ret = blockCmp(&img->blocks[b], bitmaps, n, &el, 5);
+
+            if (ret == EOF) fprintf(stderr, "Block not found, try again..\n");
+		} while (ret == EOF);
 
         uint8_t blockAlreadyPresent = 0;
         size_t paletteIdx = 0;
@@ -430,10 +434,6 @@ int main() {
         nbt_tag_compound_append(blocksTagElement, posTag);
         nbt_tag_compound_append(blocksTagElement, stateTag);
         nbt_tag_list_append(blocksTag, blocksTagElement);
-
-        // printf("%s (%d, %d, 0)\n", el.blockName, x, y);
-        // printBlock(&img->blocks[b]);
-        // getchar();
     }
 
     for (size_t e = 0; e < paletteLength; e++) {
@@ -441,14 +441,32 @@ int main() {
         nbt_set_tag_name(el, "", 1);
 
         char buf[256] = "minecraft:";
+        char *keywords[] = { "_top", "_side", "_bottom", "_top_open", "_base", "_front", "_front_honey", "_end", "_front_on" };
+        for (char** k = keywords; k < keywords + ARR_SIZE(keywords); k++) {
+            char *word = strstr(palette[e].blockName, *k);
+            if (word != NULL) {
+                nbt_tag_t *propertiesTag = nbt_new_tag_compound();
+                nbt_set_tag_name(propertiesTag, "Properties", strlen("Properties"));
+                
+                if (strcmp(word, "_top") == 0) {
+					// x = east/west
+					// z = north/south
+                    nbt_tag_t *axis = nbt_new_tag_string("z", strlen("z")); // structure faces south when pasted 
+                    nbt_set_tag_name(axis, "axis", strlen("axis"));
+                    nbt_tag_compound_append(propertiesTag, axis);
+                }
+
+                nbt_tag_compound_append(el, propertiesTag);
+
+                *word = 0;
+            }
+        }
         strcat(buf, palette[e].blockName);
         nbt_tag_t *name = nbt_new_tag_string(buf, strlen(buf));
         nbt_set_tag_name(name, "Name", strlen("Name"));
 
         nbt_tag_compound_append(el, name);
         nbt_tag_list_append(paletteTag, el);
-
-        // printf("%s ", palette[e].blockName);
     }
 
     nbt_tag_t *sizeTag = nbt_new_tag_list(NBT_TYPE_INT);
@@ -466,7 +484,10 @@ int main() {
     nbt_tag_compound_append(root, dataVersion);
     print_nbt_tree(root, 4);
 
-    write_nbt_file("hiura.nbt", root, NBT_WRITE_FLAG_USE_GZIP);
+    char out[256] = "./out/";
+    strcat(out, argv[1]);
+    strcat(out, ".nbt");
+    write_nbt_file(out, root, NBT_WRITE_FLAG_USE_GZIP);
 
     return 0;
 }

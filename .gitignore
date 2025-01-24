@@ -1,4 +1,7 @@
-*.png
 main
 *.bin
 *.exe
+
+ref/
+ppm/
+testing/

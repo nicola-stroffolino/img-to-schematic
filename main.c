@@ -102,7 +102,7 @@ size_t getBitmaps(Bitmap** blank_Bitmap, const char* dir) {
 
     if (dp == NULL) {
         perror("Error opening directory");
-        return;
+        exit(1);
     }
 
     Bitmap buffer[MAX_UNIQUE_BLOCKS];
